@@ -10,25 +10,33 @@ resource "hcloud_network_subnet" "network-subnet" {
   ip_range     = "10.0.0.0/24"
 }
 
-//resource "hcloud_primary_ip" "lb_ip" {
-//  name          = "lb_ip"
-//  datacenter    = "nbg1-dc3"
-//  type          = "ipv4"
-//  assignee_type = "server"
-//  auto_delete   = true
-//  ip_address    = "162.55.152.87"
-//}
-
-data "hcloud_primary_ip" "lb_ip" {
-  ip_address = "162.55.152.87"
+data "hcloud_load_balancer" "lb_1" {
+  name = "load-balancer-1"
 }
 
-//data "hcloud_floating_ip" "lb_ip" {
-//  ip_address = "162.55.152.87"
-//}
+resource "hcloud_load_balancer_target" "load_balancer_target" {
+  type             = "server"
+  load_balancer_id = data.hcloud_load_balancer.lb_1.id
+  server_id        = hcloud_server.lb.id
+}
 
-//resource "hcloud_floating_ip" "lb_ip" {
-//  type      = "ipv4"
-//  server_id = hcloud_server.lb.id
-//}
+# Already defined
+#resource "hcloud_load_balancer_service" "load_balancer_service_http" {
+#    load_balancer_id = data.hcloud_load_balancer.lb_1.id
+#    protocol         = "http"
+#}
+
+resource "hcloud_load_balancer_service" "load_balancer_service_https" {
+    load_balancer_id = data.hcloud_load_balancer.lb_1.id
+    protocol         = "tcp"
+    listen_port      = 443
+    destination_port = 443
+}
+
+resource "hcloud_load_balancer_service" "load_balancer_service_ssh" {
+    load_balancer_id = data.hcloud_load_balancer.lb_1.id
+    protocol         = "tcp"
+    listen_port      = 22
+    destination_port = 22
+}
 

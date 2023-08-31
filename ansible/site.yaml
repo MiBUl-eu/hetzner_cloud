@@ -1,0 +1,216 @@
+- name: Install Squid and Caddy on LB Server
+  hosts: proxy
+  tasks:
+    - name: Update Package Repository
+      apt: 
+        update_cache: yes
+    - name: Install Squid
+      include_role:
+        name: squid
+  roles:
+    - role: caddy
+      caddy_config: |
+        wordpress-mb.senecops.com
+        reverse_proxy 10.0.0.2:8080 10.0.0.3:8080 10.0.0.4:8080 {
+            lb_policy client_ip_hash
+            health_uri /
+            health_interval 5s
+            health_timeout 450ms
+        }
+
+- name: Install Galera and Wordpress on Webservers
+  hosts: webservers
+  gather_facts: true
+  tasks:
+    - name: Install required system packages
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+        state: latest
+        update_cache: true
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu jammy stable
+        state: present
+
+    - name: Update apt and install docker-ce
+      apt:
+        name: docker-ce
+        state: latest
+        update_cache: true
+
+    - name: Install Docker Module for Python
+      pip:
+        name: docker
+    
+    - name: Create galera directory if it does not exist
+      ansible.builtin.file:
+        path: /opt/galera
+        state: directory
+        mode: '0700'
+        owner: '1001'
+        group: '0'
+
+    - name: Create wordpress directory if it does not exist
+      ansible.builtin.file:
+        path: /opt/wordpress
+        state: directory
+        mode: '0700'
+        owner: '1001'
+        group: '0'
+
+    - name: Create docker.service.d directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '755'
+
+    - name: Upload File for Docker Proxy Config
+      ansible.builtin.copy:
+        src: "{{ inventory_dir }}/http-proxy.conf"
+        dest: /etc/systemd/system/docker.service.d/http-proxy.conf
+        owner: root
+        group: root
+        mode: '0640'
+
+    - name: Reload System Daemon
+      ansible.builtin.shell: systemctl daemon-reload
+
+    - name: Restart Docker Daemon
+      ansible.builtin.service: 
+        name: docker
+        state: restarted
+    
+    - name: Pull Galera Docker image
+      community.docker.docker_image:
+        name: bitnami/mariadb-galera:latest
+        source: pull
+
+    - name: Pull Wordpress Docker image
+      community.docker.docker_image:
+        name: bitnami/wordpress:latest
+        source: pull
+
+    - name: Start Galera Container on Node 1
+      community.docker.docker_container:
+        name: Galera
+        image: bitnami/mariadb-galera:latest
+        state: started
+        restart_policy: unless-stopped
+        mounts:
+          - source: "/opt/galera"
+            target: "/bitnami/mariadb"
+            type: bind
+        ports:
+          - "3306:3306"
+          - "4444:4444"
+          - "4567:4567"
+          - "4568:4568"
+        env:
+          MARIADB_GALERA_CLUSTER_NAME: "{{ MARIADB_GALERA_CLUSTER_NAME }}" 
+          MARIADB_GALERA_MARIABACKUP_USER: "{{ MARIADB_GALERA_MARIABACKUP_USER }}"
+          MARIADB_GALERA_MARIABACKUP_PASSWORD: "{{ MARIADB_GALERA_MARIABACKUP_PASSWORD }}"
+          MARIADB_ROOT_PASSWORD: "{{ MARIADB_ROOT_PASSWORD }}"
+          MARIADB_GALERA_CLUSTER_BOOTSTRAP: "yes"
+          MARIADB_USER: "{{ MARIADB_WORDPRESS_USER }}"
+          MARIADB_PASSWORD: "{{ MARIADB_WORDPRESS_PASSWORD }}"
+          MARIADB_DATABASE: "{{ MARIADB_WORDPRESS_DATABASE }}"
+          MARIADB_REPLICATION_USER: "{{ MARIADB_REPLICATION_USER }}"
+          MARIADB_REPLICATION_PASSWORD: "{{ MARIADB_REPLICATION_PASSWORD }}"
+          MARIADB_EXTRA_FLAGS: "--wsrep_provider_options=ist.recv_addr=10.0.0.2:4568;ist.recv_bind=0.0.0.0:4568 --wsrep_node_incoming_address=10.0.0.2 --wsrep_sst_receive_address=10.0.0.2"
+      when: inventory_hostname == groups['webservers'][0]
+
+    - name: Wait for Master to Startup
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Start Galera Container on all other Nodes
+      community.docker.docker_container:
+        name: Galera
+        image: bitnami/mariadb-galera:latest
+        state: started
+        restart_policy: unless-stopped
+        mounts:
+          - source: "/opt/galera"
+            target: "/bitnami/mariadb"
+            type: bind
+        ports:
+          - "3306:3306"
+          - "4444:4444"
+          - "4567:4567"
+          - "4568:4568"
+        env:
+          MARIADB_GALERA_CLUSTER_NAME: "{{ MARIADB_GALERA_CLUSTER_NAME }}" 
+          MARIADB_GALERA_CLUSTER_ADDRESS: "gcomm://10.0.0.2:4567"
+          MARIADB_GALERA_MARIABACKUP_USER: "{{ MARIADB_GALERA_MARIABACKUP_USER }}"
+          MARIADB_GALERA_MARIABACKUP_PASSWORD: "{{ MARIADB_GALERA_MARIABACKUP_PASSWORD }}"
+          MARIADB_ROOT_PASSWORD: "{{ MARIADB_ROOT_PASSWORD }}"
+          MARIADB_REPLICATION_USER: "{{ MARIADB_REPLICATION_USER }}"
+          MARIADB_REPLICATION_PASSWORD: "{{ MARIADB_REPLICATION_PASSWORD }}"
+          MARIADB_EXTRA_FLAGS: "--wsrep_provider_options=ist.recv_addr={{ ansible_ssh_host }}:4568;ist.recv_bind=0.0.0.0:4568 --wsrep_node_incoming_address={{ ansible_ssh_host }} --wsrep_sst_receive_address={{ ansible_ssh_host }}"
+      when: inventory_hostname != groups['webservers'][0]
+
+    - name: Wait for Galera Replication to finish
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Start Worepess Container on Node 1
+      community.docker.docker_container:
+        name: Wordpress
+        image: bitnami/wordpress:latest
+        state: started
+        restart_policy: unless-stopped
+        mounts:
+          - source: "/opt/wordpress"
+            target: "/bitnami/wordpress"
+            type: bind
+        ports:
+          - "8080:8080"
+        env:
+          WORDPRESS_DATABASE_USER: "{{ MARIADB_WORDPRESS_USER }}"
+          WORDPRESS_DATABASE_PASSWORD: "{{ MARIADB_WORDPRESS_PASSWORD }}"
+          WORDPRESS_DATABASE_NAME: "{{ MARIADB_WORDPRESS_DATABASE }}"
+          WORDPRESS_DATABASE_HOST: "{{ ansible_ssh_host}}"
+          WORDPRESS_USERNAME: "{{ WORDPRESS_USERNAME }}"
+          WORDPRESS_PASSWORD: "{{ WORDPRESS_PASSWORD }}"
+      when: inventory_hostname == groups['webservers'][0]
+
+    - name: Wait for Wordress on Node 1 to startup
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Start Worepess Container on all Nodes
+      community.docker.docker_container:
+        name: Wordpress
+        image: bitnami/wordpress:latest
+        state: started
+        restart_policy: unless-stopped
+        mounts:
+          - source: "/opt/wordpress"
+            target: "/bitnami/wordpress"
+            type: bind
+        ports:
+          - "8080:8080"
+        env:
+          WORDPRESS_DATABASE_USER: "{{ MARIADB_WORDPRESS_USER }}"
+          WORDPRESS_DATABASE_PASSWORD: "{{ MARIADB_WORDPRESS_PASSWORD }}"
+          WORDPRESS_DATABASE_NAME: "{{ MARIADB_WORDPRESS_DATABASE }}"
+          WORDPRESS_DATABASE_HOST: "{{ ansible_ssh_host}}"
+          WORDPRESS_USERNAME: "{{ WORDPRESS_USERNAME }}"
+          WORDPRESS_PASSWORD: "{{ WORDPRESS_PASSWORD }}"
+      when: inventory_hostname != groups['webservers'][0]
+  environment:
+    http_proxy: http://10.0.0.5:3128
+    https_proxy: http://10.0.0.5:3128

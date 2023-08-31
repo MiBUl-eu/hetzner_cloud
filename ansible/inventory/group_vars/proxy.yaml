@@ -1,0 +1,2 @@
+ansible_user: 'root'
+caddy_systemd_capabilities_enabled: true

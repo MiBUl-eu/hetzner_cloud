@@ -4,12 +4,12 @@ all:
     webservers:
       hosts:
         web1:
-          ansible_host: 10.0.0.1
-        web2:
           ansible_host: 10.0.0.2
-        web3:
+        web2:
           ansible_host: 10.0.0.3
-    haproxy:
+        web3:
+          ansible_host: 10.0.0.4
+    proxy:
       hosts:
         lb:
           ansible_host: 162.55.152.87

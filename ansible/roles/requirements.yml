@@ -1,0 +1,26 @@
+---
+# Install Roles with Ansible Galaxy: ansible-galaxy role install -r requirements.yml --force
+roles:
+  # Git Repositories
+  - name: haproxy
+    src: https://gitlab.com/courtlane/ansible-role-haproxy.git
+    version: v1.0.7
+    scm: git
+  
+  - name: squid
+    src: https://github.com/mrlesmithjr/ansible-squid
+    version: v0.1.2
+    scm: git
+
+  - name: caddy
+    src: https://github.com/caddy-ansible/caddy-ansible
+    version: v3.2.0
+    scm: git
+
+collections:
+  - name: community.mysql
+    version: "*" # Need to ensure that the latest version is installed or Molecule fails
+
+  - name: community.docker
+    version: "*" # Need to ensure that the latest version is installed or Molecule fails
+
