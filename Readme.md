@@ -1,53 +1,54 @@
-# Deploy Wordpress HA Enviroment
-The Terraform Module will deploy 4 nodes. 
-3 for Wordpress and one as LoadBallancer.
+# Deploy WordPress HA Environment
 
-The 3 Wordpress nodes can only communicat in an internal network with each other and the LoadBallancer. 
-The LoadBallancer will act as Proxy for the installation and will route the trafice from external to the 3 WP Nodes. 
+This Terraform module automates the deployment of a high-availability WordPress environment consisting of four nodes: three for WordPress instances and one as a Load Balancer.
 
-The Ansible script will install Squid and Caddy on the LoadBallancer Node. 
-On the WOrdpress Nodes it will install Galera and Wordpress as Docker Containers. 
-Each will have a mount in the /opt folder. 
-The Wordpress instances will use the local ip as the Database Connection IP. 
+The three WordPress nodes are isolated in an internal network, communicating with each other and the Load Balancer. The Load Balancer acts as a proxy, routing external traffic to the three WordPress nodes.
 
+## Ansible Configuration
 
-## Terraform Module
-The Terraform Module has 4 Variable where 3 have default values. 
+The Ansible script plays a crucial role in setting up the environment:
 
-### hcloud_token
-The hetzner cloud token. Please use Enviroment Variable or insert it at the terraform call.
-This variable is required. 
+- **Load Balancer**: Installs Squid and Caddy on the Load Balancer node.
+- **WordPress Nodes**: Deploys Galera and WordPress as Docker containers, each with a mount point in the `/opt` folder. These WordPress instances use the local IP as the database connection IP.
 
-### server_type
-Witch Server Type to deploy. The default value is cx21.
+## Terraform Module Configuration
 
-### image
-Witch Image to deploy. The default value is ubuntu-22.04.
+The Terraform module includes four variables, with three of them having default values:
 
-### datacenter
-Witch datacenter to deploy. The default value is nbg1-dc3
+### `hcloud_token` (Required)
+You must provide the Hetzner Cloud token, either via an environment variable or by passing it during the Terraform execution.
 
-## Installation
-For the installation you need to have ansible and terraform installed on your system. 
-Also you should export your hcloud token
-''' bash
+### `server_type` (Default: cx21)
+Specify the server type to deploy. The default is set to `cx21`.
+
+### `image` (Default: ubuntu-22.04)
+Choose the image to deploy. The default image is `ubuntu-22.04`.
+
+### `datacenter` (Default: nbg1-dc3)
+Select the data center for deployment. The default data center is `nbg1-dc3`.
+
+## Installation Instructions
+
+To proceed with the installation, ensure that both Ansible and Terraform are installed on your system. Additionally, export your Hetzner Cloud token using the following command:
+
+```bash
 export TF_VAR_hcloud_token=<YOUR TOKEN>
-'''
+```
 
-After that please run in this folder: 
+Next, navigate to this project's folder and execute the following Terraform commands:
 
-''' bash
+```bash
 terraform init
 terraform plan
 terraform apply
-'''
+```
 
-After that you can start with the ansible script. The Ansible call will ask you for the vault password
+Once the Terraform deployment completes, you can proceed with the Ansible script. During execution, Ansible will prompt you for the vault password:
 
-''' bash
+```bash
 cd ansible
 ansible-galaxy install -r roles/requirements.yml --force
 ansible-playbook -i inventory/ site.yaml --ask-vault-pass
-'''
+```
 
-After all is finished you can visit the new Wordpress Installation at https://wordpress-mb.senecops.com/
+After all steps are successfully executed, you can access the newly deployed WordPress installation at [https://wordpress-mb.senecops.com/](https://wordpress-mb.senecops.com/).
