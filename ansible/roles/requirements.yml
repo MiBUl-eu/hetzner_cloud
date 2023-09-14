@@ -3,7 +3,7 @@
 roles:
   # Git Repositories
   - name: haproxy
-    src: https://gitlab.com/courtlane/ansible-role-haproxy.git
+    src: https://gitlab.com/courtlane/ansible-role-haproxy
     version: v1.0.7
     scm: git
   
